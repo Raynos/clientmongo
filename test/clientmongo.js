@@ -496,6 +496,17 @@ suite("Cursor", function () {
             })
         })
     })
+
+    test("each", function (done) {
+        cursor.each(function(err, item) {
+            if (item === null) {
+                cursor.toArray(function(err, items) {
+                    assert.equal(err.message, "Cursor is closed")
+                    done()
+                })
+            }
+        })
+    })
 })
 
 function isnull(err) {

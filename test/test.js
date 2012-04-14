@@ -2405,6 +2405,7 @@ var Cursor = {
     },
     toArray: tunnelCursorRemote("toArray"),
     nextObject: tunnelCursorRemote("nextObject"),
+    nextObject: tunnelCursorRemote("each"),
     rewind: storeCommand("rewind")
 }
 
@@ -8652,6 +8653,17 @@ suite("Cursor", function () {
                 assert.equal(item.a, 1)
                 done()
             })
+        })
+    })
+
+    test("each", function (done) {
+        cursor.each(function(err, item) {
+            if (item === null) {
+                cursor.toArray(function(err, items) {
+                    assert.equal(err.message, "Cursor is closed")
+                    done()
+                })
+            }
         })
     })
 })
