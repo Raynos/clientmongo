@@ -47,7 +47,13 @@ Auth can be implemented by passing auth tokens along in the browser
 
 and by implementing auth handling in the server
 
-    var clientmongo = clientMongo(server, function (auth, options, callback) {
+    /*
+        authToken comes from the browser authToken
+        options is the options passed over RPC, including collectionName,
+            method, args, cursor data
+        callback is used for async auth
+    */
+    var clientmongo = clientMongo(server, function (authToken, options, callback) {
             // return boolean for allowed (sync)
             return true || false
             // or return allowed or not through callback
