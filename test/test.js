@@ -2387,6 +2387,39 @@ dnode.connect(function (remote) {
     })
 })
 
+var Cursor = {
+    constructor: function (collectionName, args, method) {
+        args = args.slice()
+        this.name = collectionName
+        this.args = args
+        this.method = method
+        this.commands = []
+
+        if (typeof args[args.length - 1] === "function") {
+            args[args.length - 1] = function () {}
+        }
+
+        return this
+    },
+    toArray: function () {
+        var self = this
+
+        self.commands.push({
+            method: "toArray",
+            args: [].slice.call(arguments)
+        })
+
+        getRemote(function (remote) {
+            remote.sendCursorCommand({
+                method: self.method,
+                args: self.args,
+                name: self.name,
+                commands: self.commands
+            })
+        })
+    }
+}
+
 var Collection = {
     constructor: function (collectionName) {
         this.name = collectionName
@@ -2402,7 +2435,15 @@ var Collection = {
     count: tunnelToRemote("count"),
     drop: tunnelToRemote("drop"),
     findAndModify: tunnelToRemote("findAndModify"),
-    findAndRemove: tunnelToRemote("findAndRemove")
+    findAndRemove: tunnelToRemote("findAndRemove"),
+    findOne: tunnelToRemoteWithCursor("findOne"),
+    find: tunnelToRemoteWithCursor("find"),
+    createIndex: tunnelToRemote("createIndex"),
+    ensureIndex: tunnelToRemote("ensureIndex"),
+    indexInformation: tunnelToRemote("indexInformation"),
+    dropIndex: tunnelToRemote("dropIndex"),
+    dropAllIndexes: tunnelToRemote("dropAllIndexes"),
+    reIndex: tunnelToRemote("reIndex")
 }
 
 module.exports = function (name) {
@@ -2425,6 +2466,21 @@ function tunnelToRemote(methodName) {
         getRemote(function (remote) {
             remote.sendCommand(methodName, name, args)
         })
+    }
+}
+
+function tunnelToRemoteWithCursor(methodName) {
+    return function () {
+        var args = [].slice.call(arguments),
+            name = this.name,
+            callback = args[args.length - 1]
+
+        if (typeof callback === "function") {
+            getRemote(function (remote) {
+                remote.sendCommand(methodName, name, args)
+            })
+        }
+        return Object.create(Cursor).constructor(name, args, methodName)
     }
 }
 });
@@ -7872,6 +7928,247 @@ suite("clientmongo", function () {
                     assert.equal(v, k, "docs not right")
                 })
                 done()
+            })
+        })
+    })
+
+    test("count", function (done) {
+        Col.insert(dummy, function (err) {
+            isnull(err)
+            Col.count(function (err, amount) {
+                isnull(err)
+                assert.equal(amount, 1, "count is wrong")
+                done()
+            })
+        })
+    })
+
+    test("drop", function (done) {
+        Col.insert(dummy, function (err) {
+            isnull(err)
+            Col.drop(function (err, success) {
+                isnull(err)
+                assert.equal(true, success, "drop is not success")
+                Col.count(function (err, count) {
+                    isnull(err)
+                    assert.equal(count, 0, "count is not zero")
+                    done()
+                })
+            })
+        })
+    })
+
+    test("findAndModify", function (done) {
+        Col.insert(dummy, function (err) {
+            isnull(err)
+            Col.findAndModify(dummy, [['_id', 1]], {
+                $set: {
+                    "foobar": "baz"
+                }
+            }, { 
+                new: true
+            }, function (err, doc) {
+                isnull(err)
+                assert.equal(doc.foobar, "baz", "foobar not set")
+                done()
+            })  
+        })
+    })
+
+    test("findAndRemove", function (done) {
+        Col.insert(dummy, function (err) {
+            isnull(err)
+            Col.findAndRemove(dummy, [['_id', 1]], function (err, doc) {
+                isnull(err)
+                assert.equal(doc.foo, "bar", "doc incorrect")
+                Col.count(function (err, count) {
+                    isnull(err)
+                    assert.equal(count, 0, "count incorrect")
+                    done()
+                })
+            })
+        })
+    })
+
+    test("find", function (done) {
+        Col.insert(dummy, function (err) {
+            Col.find().toArray(function (err, docs) {
+                isnull(err)
+                assert.equal(docs[0].foo, "bar", "docs is wrong")
+                done()
+            })
+        })
+    })
+
+    test("findOne", function (done) {
+        Col.insert(dummy, function (err) {
+            isnull(err)
+            Col.findOne(dummy, function (err, doc) {
+                isnull(err)
+                assert.equal(doc.foo, "bar", "doc incorrect")
+                done()
+            })
+        })
+    })
+
+    test("createIndex", function (done) {
+        Col.insert([{ a: 1 }, { a: 2 }, { a: 3 }], function (err) {
+            isnull(err)
+            Col.createIndex("a", { safe: true }, function (err, indexName) {
+                isnull(err)
+                assert.equal(indexName, "a_1", "indexName incorrect")
+                Col.findOne({ a: 2 }, { explain: true }, 
+                    function (err, result) 
+                {
+                    isnull(err)
+                    var index = result.indexBounds.a[0]
+                    assert.equal(index[0], 2, "index is incorrect")
+                    assert.equal(index[1], 2, "index is incorrect")
+                    done()
+                })
+            })
+        })
+    })
+
+    test("ensureIndex", function (done) {
+        Col.insert([
+            {a:1, b:1}, 
+            {a:1, b:1}, 
+            {a:2, b:2}, 
+            {a:3, b:3}, 
+            {a:4, b:4}
+        ], {safe:true}, function(err, result) {
+            isnull(err)
+
+            Col.ensureIndex({a:1, b:1}, {
+                unique:true, 
+                background:true, 
+                dropDups:true, 
+                safe:true
+            }, function(err, indexName) {
+                Col.find({}).toArray(function(err, items) {
+                    isnull(err)
+                    assert.equal(4, items.length)
+
+                    Col.find(
+                        {a:2}, 
+                        {explain:true}
+                    ).toArray(function(err, explanation) {
+                        assert.equal(null, err)
+                        assert.ok(explanation[0].indexBounds.a != null)
+                        assert.ok(explanation[0].indexBounds.b != null)
+                        done()
+                    })
+                })
+            })
+        })
+    })
+
+    test("indexInformation", function (done) {
+        Col.insert([
+            {a:1, b:1}, 
+            {a:1, b:1}, 
+            {a:2, b:2}, 
+            {a:3, b:3}, 
+            {a:4, b:4}
+        ], {safe:true}, function(err, result) {
+            isnull(err)
+
+            Col.ensureIndex({a:1, b:1}, {
+                unique:true, 
+                background:true, 
+                dropDups:true, 
+                safe:true
+            }, function(err, indexName) {
+                Col.indexInformation(function(err, indexInformation) {
+                    assert.equal('_id', indexInformation._id_[0][0])
+                    assert.equal('a', indexInformation.a_1_b_1[0][0])
+                    done()
+                })
+            })
+        })
+    })
+
+    test("dropIndex", function (done) {
+        Col.insert([
+            {a:1, b:1}, 
+            {a:1, b:1}, 
+            {a:2, b:2}, 
+            {a:3, b:3}, 
+            {a:4, b:4}
+        ], {safe:true}, function(err, result) {
+            isnull(err)
+
+            Col.ensureIndex({a:1, b:1}, {
+                unique:true, 
+                background:true, 
+                dropDups:true, 
+                safe:true
+            }, function(err, indexName) {
+                Col.dropIndex("a_1_b_1", function (err, result) {
+                    isnull(err)
+                    Col.indexInformation(function(err, indexInformation) {
+                        assert.equal(undefined, indexInformation.a_1_b_1)
+                        done()
+                    })
+                })
+            })
+        })
+    })
+
+    test("dropAllIndexes", function (done) {
+        Col.insert([
+            {a:1, b:1}, 
+            {a:1, b:1}, 
+            {a:2, b:2}, 
+            {a:3, b:3}, 
+            {a:4, b:4}
+        ], {safe:true}, function(err, result) {
+            isnull(err)
+
+            Col.ensureIndex({a:1, b:1}, {
+                unique:true, 
+                background:true, 
+                dropDups:true, 
+                safe:true
+            }, function(err, indexName) {
+                Col.dropAllIndexes(function (err, result) {
+                    isnull(err)
+                    Col.indexInformation(function(err, indexInformation) {
+                        assert.equal(undefined, indexInformation.a_1_b_1)
+                        done()
+                    })
+                })
+            })
+        })
+    })
+
+    test("reIndex", function (done) {
+        Col.insert([
+            {a:1, b:1}, 
+            {a:1, b:1}, 
+            {a:2, b:2}, 
+            {a:3, b:3}, 
+            {a:4, b:4}
+        ], {safe:true}, function(err, result) {
+            isnull(err)
+
+            Col.ensureIndex({a:1, b:1}, {
+                unique:true, 
+                background:true, 
+                dropDups:true, 
+                safe:true
+            }, function(err, indexName) {
+                Col.reIndex(function (err, result) {
+                    isnull(err)
+                    assert.equal(result, true, "index result is wrong")
+
+                    Col.indexInformation(function(err, indexInformation) {
+                        assert.equal('_id', indexInformation._id_[0][0])
+                        assert.equal('a', indexInformation.a_1_b_1[0][0])
+                        done()
+                    })
+                })
             })
         })
     })

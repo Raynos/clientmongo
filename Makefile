@@ -6,8 +6,10 @@ web:
 test-builder:
 	browserify ./test/clientmongo.js \
 		--o ./test/test.js \
-		--watch \
 		--require buffer
+
+test-build:
+	node ./test/build.js
 
 test-server:
 	node ./test/server.js
