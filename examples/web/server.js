@@ -11,9 +11,7 @@ var app = connect(),
     madness = mongocol("Madness"),
     bundle = browserify()
 
-bundle.require({ indexPath: indexPath })
-
-bundle.alias("clientmongo", indexPath)
+bundle.require(indexPath)
 
 bundle.addEntry(path.join(__dirname, "client.js"))
 
