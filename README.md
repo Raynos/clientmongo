@@ -2,7 +2,7 @@
 
 MongoDB on the client
 
-## Example
+## <a href="Example">Example</a>
 
     // client.js
     var clientmongo = require("clientMongo"),
@@ -25,7 +25,7 @@ For a full example run the unit test suite (one code base) on both the server an
 
 To clarify, you can run the exact same code that interacts with mongoDB in both the browser and the server using `clientmongo`
 
-## Tests
+## <a href="Tests">Tests</a>
 
  1. Install dependencies `$ npm install`
  2. Run server-side tests `make test`
