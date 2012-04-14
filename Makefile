@@ -4,7 +4,10 @@ web:
 	node ./examples/web/server.js
 
 test-builder:
-	browserify -w -o ./test/test.js ./test/clientmongo.js
+	browserify ./test/clientmongo.js \
+		--o ./test/test.js \
+		--watch \
+		--require buffer
 
 test-server:
 	node ./test/server.js
