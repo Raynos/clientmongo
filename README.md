@@ -2,7 +2,7 @@
 
 MongoDB on the client
 
-## <a href="Example">Example</a>
+## <a href="#Example" name="Example">Example</a>
 
     // client.js
     var clientmongo = require("clientMongo"),
@@ -25,7 +25,7 @@ For a full example run the unit test suite (one code base) on both the server an
 
 To clarify, you can run the exact same code that interacts with mongoDB in both the browser and the server using `clientmongo`
 
-## <a href="Tests">Tests</a>
+## <a href="#Tests" name="Tests">Tests</a>
 
  1. Install dependencies `$ npm install`
  2. Run server-side tests `make test`
@@ -33,13 +33,13 @@ To clarify, you can run the exact same code that interacts with mongoDB in both 
  4. Build client-side code for client-side tests `make test-build`
  5. Run tests in browser (localhost:3000) or `make test-run`
 
-## Documentation
+## <a href="#Documentation" name="Documentation">Documentation</a>
 
-The APIs match the mongo-col API and more specifically the MongoDB Collection and Cursor API.
+The APIs match the mongo-col API and more specifically the MongoDB [Collection][1] and [Cursor][2] API.
 
 The only things missing are the options commands on the Collection.
 
-### Auth
+### <a href="#Auth" name="Auth">Auth</a>
 
 Auth can be implemented by passing auth tokens along in the browser
 
@@ -62,3 +62,6 @@ and by implementing auth handling in the server
             }, 50)
         }),
         Users = clientmongo("Users")
+
+  [1]: http://mongodb.github.com/node-mongodb-native/api-generated/collection.html
+  [2]: http://mongodb.github.com/node-mongodb-native/api-generated/cursor.html
