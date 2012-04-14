@@ -2422,7 +2422,7 @@ var Cursor = {
 
 var Collection = {
     constructor: function (collectionName) {
-        this.name = collectionName
+        this._name = collectionName
         return this
     },
     findOne: tunnelToRemote("findOne"),
@@ -2443,10 +2443,15 @@ var Collection = {
     indexInformation: tunnelToRemote("indexInformation"),
     dropIndex: tunnelToRemote("dropIndex"),
     dropAllIndexes: tunnelToRemote("dropAllIndexes"),
-    reIndex: tunnelToRemote("reIndex")
+    reIndex: tunnelToRemote("reIndex"),
+    mapReduce: tunnelToRemoteWithCollection("mapReduce")
 }
 
 module.exports = function (name) {
+    return collection(name)
+}
+
+function collection(name) {
     return Object.create(Collection).constructor(name)
 }
 
@@ -2461,10 +2466,14 @@ function getRemote(cb) {
 function tunnelToRemote(methodName) {
     return function () {
         var args = [].slice.call(arguments),
-            name = this.name
+            name = this._name
 
         getRemote(function (remote) {
-            remote.sendCommand(methodName, name, args)
+            remote.sendCommand({
+                method: methodName,
+                name: name,
+                args: args
+            })
         })
     }
 }
@@ -2472,15 +2481,41 @@ function tunnelToRemote(methodName) {
 function tunnelToRemoteWithCursor(methodName) {
     return function () {
         var args = [].slice.call(arguments),
-            name = this.name,
+            name = this._name,
             callback = args[args.length - 1]
 
         if (typeof callback === "function") {
             getRemote(function (remote) {
-                remote.sendCommand(methodName, name, args)
+                remote.sendCommand({
+                    method: methodName, 
+                    name: name, 
+                    args: args
+                })
             })
         }
         return Object.create(Cursor).constructor(name, args, methodName)
+    }
+}
+
+function tunnelToRemoteWithCollection(methodName) {
+    return function () {
+        var args = [].slice.call(arguments),
+            cb = args[args.length - 1]
+            name = this._name
+
+        args[args.length - 1] = function (err, collectionName) {
+            console.log("generating collection", collectionName)
+            cb(err, 
+                collectionName && collection(collectionName))
+        }
+
+        getRemote(function (remote) {
+            remote.sendCollectionCommand({
+                method: methodName,
+                name: name,
+                args: args
+            })
+        })   
     }
 }
 });
@@ -8166,6 +8201,31 @@ suite("clientmongo", function () {
                     Col.indexInformation(function(err, indexInformation) {
                         assert.equal('_id', indexInformation._id_[0][0])
                         assert.equal('a', indexInformation.a_1_b_1[0][0])
+                        done()
+                    })
+                })
+            })
+        })
+    })    
+
+    test("mapReduce", function (done) {
+        Col.insert([
+            {'user_id':1}, 
+            {'user_id':2}
+        ], {safe:true}, function(err, r) {
+            var map = "function() { emit(this.user_id, 1) }"
+            var reduce = "function(k,vals) { return 1 }"
+
+            Col.mapReduce(map, reduce, {
+                out: {replace : 'tempCollection'}
+            }, function(err, collection) {
+                collection.findOne({'_id':1}, function(err, result) {
+                    isnull(err)
+                    assert.equal(1, result.value)
+
+                    collection.findOne({'_id':2}, function(err, result) {
+                        isnull(err)
+                        assert.equal(1, result.value)
                         done()
                     })
                 })

@@ -338,6 +338,31 @@ suite("clientmongo", function () {
                 })
             })
         })
+    })    
+
+    test("mapReduce", function (done) {
+        Col.insert([
+            {'user_id':1}, 
+            {'user_id':2}
+        ], {safe:true}, function(err, r) {
+            var map = "function() { emit(this.user_id, 1) }"
+            var reduce = "function(k,vals) { return 1 }"
+
+            Col.mapReduce(map, reduce, {
+                out: {replace : 'tempCollection'}
+            }, function(err, collection) {
+                collection.findOne({'_id':1}, function(err, result) {
+                    isnull(err)
+                    assert.equal(1, result.value)
+
+                    collection.findOne({'_id':2}, function(err, result) {
+                        isnull(err)
+                        assert.equal(1, result.value)
+                        done()
+                    })
+                })
+            })
+        })
     })
 })
 
