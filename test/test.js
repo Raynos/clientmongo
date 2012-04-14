@@ -2389,12 +2389,11 @@ dnode.connect(function (remote) {
 })
 
 var Cursor = {
-    constructor: function (collectionName, args, method) {
-        args = args.slice()
-        this.name = collectionName
-        this.args = args
-        this.cursor = uuid()
-        this.method = method
+    constructor: function (options) {
+        this.name = options.name
+        var args = this.args = (options.args || []).slice()
+        this.cursor = options.cursor || uuid()
+        this.method = options.method
         this.commands = []
 
         if (typeof args[args.length - 1] === "function") {
@@ -2405,7 +2404,40 @@ var Cursor = {
     },
     toArray: tunnelCursorRemote("toArray"),
     nextObject: tunnelCursorRemote("nextObject"),
-    nextObject: tunnelCursorRemote("each"),
+    each: tunnelCursorRemote("each"),
+    count: tunnelCursorRemote("count"),
+    sort: storeOrTunnelCommand("sort"),
+    limit: storeOrTunnelCommand("limit"),
+    skip: storeOrTunnelCommand("skip"),
+    batchSize: storeOrTunnelCommand("batchSize"),
+    explain: tunnelCursorRemote("explain"),
+    close: function (callback) {
+        var self = this,
+            commands = self.commands.slice()
+
+        commands.push({
+            method: "close",
+            args: [function () {
+                self._closed = true
+                callback.apply(this, arguments)
+            }]
+        })
+
+        self.commands = []
+
+        getRemote(function (remote) {
+            remote.sendCursorCommand({
+                method: self.method,
+                args: self.args,
+                cursor: self.cursor,
+                name: self.name,
+                commands: commands
+            })
+        })
+    },
+    isClosed: function () {
+        return this._closed
+    },
     rewind: storeCommand("rewind")
 }
 
@@ -2418,6 +2450,43 @@ function tunnelCursorRemote(method) {
             method: method,
             args: [].slice.call(arguments)
         })
+
+        self.commands = []
+
+        getRemote(function (remote) {
+            remote.sendCursorCommand({
+                method: self.method,
+                args: self.args,
+                cursor: self.cursor,
+                name: self.name,
+                commands: commands
+            })
+        })
+
+        return self
+    }
+}
+
+function storeOrTunnelCommand(method) {
+    return function () {
+        var self = this,
+            args = [].slice.call(arguments),
+            cb = args[args.length - 1]
+
+        self.commands.push({
+            method: method,
+            args: args
+        })
+
+        if (typeof cb !== "function") {
+            return self
+        }
+        
+        var commands = self.commands.slice()
+
+        args[args.length - 1] = function (err) {
+            cb(err, self)
+        }
 
         self.commands = []
 
@@ -2465,8 +2534,52 @@ var Collection = {
     drop: tunnelToRemote("drop"),
     findAndModify: tunnelToRemote("findAndModify"),
     findAndRemove: tunnelToRemote("findAndRemove"),
-    findOne: tunnelToRemoteWithCursor("findOne"),
-    find: tunnelToRemoteWithCursor("find"),
+    findOne: function () {
+        var args = [].slice.call(arguments),
+            name = this._name,
+            callback = args[args.length - 1]
+
+        if (typeof callback === "function") {
+            getRemote(function (remote) {
+                remote.sendCollectionCommand({
+                    method: "findOne", 
+                    name: name, 
+                    args: args
+                })
+            })
+        }
+        return cursor({
+            name: name,
+            args: args,
+            method: "findOne"
+        })
+    },
+    find: function () {
+        var args = [].slice.call(arguments),
+            name = this._name,
+            callback = args[args.length - 1]
+
+        if (typeof callback === "function") {
+            args[args.length - 1] = function (err, cursorName) {
+                callback.call(this, err, cursor({
+                    cursor: cursorName
+                }))
+            }
+
+            return getRemote(function (remote) {
+                remote.sendCommandWithCursor({
+                    method: "find", 
+                    name: name, 
+                    args: args
+                })
+            })
+        }
+        return cursor({
+            name: name,
+            args: args,
+            method: "find"
+        })
+    },
     createIndex: tunnelToRemote("createIndex"),
     ensureIndex: tunnelToRemote("ensureIndex"),
     indexInformation: tunnelToRemote("indexInformation"),
@@ -2490,6 +2603,10 @@ function collection(name) {
     return Object.create(Collection).constructor(name)
 }
 
+function cursor(options) {
+    return Object.create(Cursor).constructor(options)
+}
+
 function getRemote(cb) {
     if (cached) {
         cb(cached)
@@ -2504,7 +2621,7 @@ function tunnelToRemote(methodName) {
             name = this._name
 
         getRemote(function (remote) {
-            remote.sendCommand({
+            remote.sendCollectionCommand({
                 method: methodName,
                 name: name,
                 args: args
@@ -2521,14 +2638,18 @@ function tunnelToRemoteWithCursor(methodName) {
 
         if (typeof callback === "function") {
             getRemote(function (remote) {
-                remote.sendCommand({
+                remote.sendCollectionCommand({
                     method: methodName, 
                     name: name, 
                     args: args
                 })
             })
         }
-        return Object.create(Cursor).constructor(name, args, methodName)
+        return cursor({
+            name: name,
+            args: args,
+            method: methodName
+        })
     }
 }
 
@@ -2544,7 +2665,7 @@ function tunnelToRemoteWithCollection(methodName) {
         }
 
         getRemote(function (remote) {
-            remote.sendCollectionCommand({
+            remote.sendCommandWithCollection({
                 method: methodName,
                 name: name,
                 args: args
@@ -8329,6 +8450,19 @@ suite("Collection", function () {
         })
     })
 
+    test("find callback", function (done) {
+        Col.insert(dummy, function (err) {
+            Col.find(function (err, cursor) {
+                isnull(err)
+                cursor.toArray(function (err, docs) {
+                    isnull(err)
+                    assert.equal(docs[0].foo, "bar", "doc is wrong")
+                    done()
+                })
+            })
+        })
+    })
+
     test("findOne", function (done) {
         Col.insert(dummy, function (err) {
             isnull(err)
@@ -8664,6 +8798,77 @@ suite("Cursor", function () {
                     done()
                 })
             }
+        })
+    })
+
+    test("count", function (done) {
+        cursor.count(function (err, count) {
+            isnull(err)
+            assert.equal(count, 3)
+            done()
+        })
+    })
+
+    test("sort", function (done) {
+        cursor.sort([["a", -1]]).nextObject(function (err, item) {
+            assert.equal(item.a, 3)
+            done()
+        })
+    })
+
+    test("sort callback", function (done) {
+        cursor.sort([["a", -1]], function (err, cursor) {
+            cursor.nextObject(function (err, item) {
+                assert.equal(item.a, 3)
+                done()
+            })
+        })
+    })
+
+    test("limit", function (done) {
+        cursor.limit(1).toArray(function (err, items) {
+            assert.equal(items.length, 1)
+            done()
+        })
+    })
+
+    test("skip", function (done) {
+        cursor.skip(1, function (err, cursor) {
+            isnull(err)
+            cursor.nextObject(function (err, item) {
+                assert.equal(item.a, 2)
+                done()
+            })
+        })
+    })
+
+    test("batchSize", function (done) {
+        cursor.batchSize(1).toArray(function (err, items) {
+            assert.equal(1, items.length)
+            done()
+        })
+    })
+
+    test("nextObject", function (done) {
+        cursor.nextObject(function (err, item) {
+            assert.equal(item.a, 1)
+            done()
+        })
+    })
+
+    test("explain", function (done) {
+        cursor.explain(function (err, details) {
+            isnull(err)
+            assert.equal(details.n, 3)
+            done()
+        })
+    })
+
+    test("close", function (done) {
+        cursor.close(function (err) {
+            isnull(err)
+            assert.equal(true, cursor.isClosed())
+            done()
         })
     })
 })

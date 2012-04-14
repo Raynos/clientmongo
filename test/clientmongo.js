@@ -170,6 +170,19 @@ suite("Collection", function () {
         })
     })
 
+    test("find callback", function (done) {
+        Col.insert(dummy, function (err) {
+            Col.find(function (err, cursor) {
+                isnull(err)
+                cursor.toArray(function (err, docs) {
+                    isnull(err)
+                    assert.equal(docs[0].foo, "bar", "doc is wrong")
+                    done()
+                })
+            })
+        })
+    })
+
     test("findOne", function (done) {
         Col.insert(dummy, function (err) {
             isnull(err)
@@ -505,6 +518,77 @@ suite("Cursor", function () {
                     done()
                 })
             }
+        })
+    })
+
+    test("count", function (done) {
+        cursor.count(function (err, count) {
+            isnull(err)
+            assert.equal(count, 3)
+            done()
+        })
+    })
+
+    test("sort", function (done) {
+        cursor.sort([["a", -1]]).nextObject(function (err, item) {
+            assert.equal(item.a, 3)
+            done()
+        })
+    })
+
+    test("sort callback", function (done) {
+        cursor.sort([["a", -1]], function (err, cursor) {
+            cursor.nextObject(function (err, item) {
+                assert.equal(item.a, 3)
+                done()
+            })
+        })
+    })
+
+    test("limit", function (done) {
+        cursor.limit(1).toArray(function (err, items) {
+            assert.equal(items.length, 1)
+            done()
+        })
+    })
+
+    test("skip", function (done) {
+        cursor.skip(1, function (err, cursor) {
+            isnull(err)
+            cursor.nextObject(function (err, item) {
+                assert.equal(item.a, 2)
+                done()
+            })
+        })
+    })
+
+    test("batchSize", function (done) {
+        cursor.batchSize(1).toArray(function (err, items) {
+            assert.equal(1, items.length)
+            done()
+        })
+    })
+
+    test("nextObject", function (done) {
+        cursor.nextObject(function (err, item) {
+            assert.equal(item.a, 1)
+            done()
+        })
+    })
+
+    test("explain", function (done) {
+        cursor.explain(function (err, details) {
+            isnull(err)
+            assert.equal(details.n, 3)
+            done()
+        })
+    })
+
+    test("close", function (done) {
+        cursor.close(function (err) {
+            isnull(err)
+            assert.equal(true, cursor.isClosed())
+            done()
         })
     })
 })
