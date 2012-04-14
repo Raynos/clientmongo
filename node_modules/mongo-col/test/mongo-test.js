@@ -1,6 +1,6 @@
 var collection = require("../"),
     assert = require("assert"),
-    Users = collection("Users")
+    Users = collection("Userz")
 
 describe("mongo-collection", function () {
     beforeEach(function (done) {

@@ -1,8 +1,9 @@
-var Col = require("clientmongo")("__Col"),
+var clientmongo = require("clientmongo"),
+    Col = clientmongo("__Col"),
     uuid = require("node-uuid"),
     assert = require("assert")
 
-suite("clientmongo", function () {
+suite("Collection", function () {
     var dummy = { foo: "bar" }
 
     setup(function (done) {
@@ -45,13 +46,15 @@ suite("clientmongo", function () {
     })
 
     test("rename", function (done) {
+        var Col = clientmongo(uuid())
         Col.insert(dummy, function (err) {
             isnull(err)
             var name = uuid()
             Col.rename(name, function (err, collection) {
                 //console.log("rename", arguments)
                 isnull(err)
-                assert.equal(collection.collectionName, name)
+                assert.equal(collection.collectionName, name,
+                    "collectionName is wrong")
                 done()
             })
         })
@@ -361,6 +364,135 @@ suite("clientmongo", function () {
                         done()
                     })
                 })
+            })
+        })
+    })
+
+    test("group", function (done) {
+        Col.insert([{'a':2}, {'b':5}, {'a':1}], {
+            safe:true
+        }, function(err, ids) {
+            isnull(err)
+            Col.group(
+                [], 
+                {}, 
+                {
+                    "count": 0
+                }, 
+                "function (obj, prev) { prev.count++; }", 
+                function(err, results) 
+            {
+                isnull(err)
+                assert.equal(3, results[0].count);
+                done()
+            })
+        })
+    })
+
+    test("indexExists", function (done) {
+        Col.createIndex('a', {safe:true}, function(err, indexName) {
+            isnull(err)
+            Col.indexExists("a_1", function(err, result) {
+                isnull(err)
+                assert.equal(true, result)
+                done()
+            })
+        })
+    })
+
+    test("geoNear", function (done) {
+        Col.ensureIndex({loc:"2d"}, function(err, result) {
+            isnull(err)
+            Col.insert([
+                {a:1, loc:[50, 30]}, 
+                {a:1, loc:[30, 50]}
+            ], {safe:true}, function(err, result) {
+                Col.geoNear(50, 50, {
+                    query:{a:1}, num:1
+                }, function(err, docs) {
+                    assert.equal(1, docs.results.length)
+                    done()
+                })
+            })
+        })
+    })
+
+    test("geoHaystackSearch", function (done) {
+        Col.ensureIndex({
+            loc: "geoHaystack", 
+            type: 1
+        }, {bucketSize: 1}, function(err, result) {
+            Col.insert([
+                {a:1, loc:[50, 30]}, 
+                {a:1, loc:[30, 50]}
+            ], {safe:true}, function(err, result) {
+                Col.geoHaystackSearch(50, 50, {
+                    search:{a:1}, 
+                    limit:1, 
+                    maxDistance:100
+                }, function(err, docs) {
+                    assert.equal(1, docs.results.length);
+                    done()
+                })
+            })
+        })
+    })
+
+    test("indexes", function (done) {
+        Col.ensureIndex({a:1}, {safe:true}, function(err, result) {
+            isnull(err)
+
+            Col.indexes(function(err, indexes) {
+                assert.equal(2, indexes.length)
+                done()
+            })
+        })
+    })
+
+    test("stats", function (done) {
+        Col.insert([
+            {a:1}, {hello:'world'}
+        ], {safe:true}, function(err, result) {
+            Col.stats(function(err, stats) {
+                assert.equal(2, stats.count);
+                done()
+            })
+        })
+    })
+})
+
+suite("Cursor", function () {
+    var cursor,
+        dummy = [{
+            a: 1
+        }, {
+            a: 2
+        }, {
+            a: 3
+        }]
+
+    setup(function (done) {
+        Col.drop(function () {
+            Col.insert(dummy, function () {
+                cursor = Col.find()
+                done()
+            })
+        })
+    })
+
+    teardown(function (done) {
+        Col.drop(function () { done() })
+    })
+
+    test("rewind", function (done) {
+        cursor.nextObject(function (err, item) {
+            assert.equal(item.a, 1)
+
+            cursor.rewind()
+
+            cursor.nextObject(function (err, item) {
+                assert.equal(item.a, 1)
+                done()
             })
         })
     })
