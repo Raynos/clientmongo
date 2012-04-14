@@ -1,0 +1,14 @@
+{
+    "name": "clientmongo", 
+    "version": "0.1.0",
+    "description": "MongoDB proxy for clientside", 
+    "author": "Raynos <raynos2@gmail.com>",
+    "dependencies": {
+        "dnode": "0.9.9",
+        "mongo-col": "0.1.14"
+    },
+    "devDependencies": {
+        "browserify": "1.10.7",
+        "connect": "2.1.2"
+    }
+}
