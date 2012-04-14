@@ -1,0 +1,101 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>Clientmongo by Raynos</title>
+    
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1>Clientmongo</h1>
+        <p>Use the mongo API in the browser</p>
+        <p class="view"><a href="https://github.com/Raynos/clientmongo">View the Project on GitHub <small>Raynos/clientmongo</small></a></p>
+        <ul>
+          <li><a href="https://github.com/Raynos/clientmongo/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/Raynos/clientmongo/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/Raynos/clientmongo">Fork On <strong>GitHub</strong></a></li>
+        </ul>
+      </header>
+      <section>
+        <h1>clientmongo</h1>
+
+<p>MongoDB in your browser</p>
+
+<h2><a href="#Example" name="Example">Example</a></h2>
+
+<pre><code>// client.js
+var Users = require("clientmongo")("Users")
+
+Users.insert({ foo: "bar" }, function () {
+    Users.findOne({ foo: "bar" }, function (err, person) {
+        console.log(person.foo === "bar")
+    })
+})
+
+// server.js
+var server = require("http").createServer(),
+    clientmongo = require("clientmongo")(server)
+</code></pre>
+
+<p>To clarify, you can run the exact same code that interacts with mongoDB in both the browser and the server using <code>clientmongo</code>.</p>
+
+<p>The server-side instance of <code>clientmongo</code> does require a HTTP server to do communication over, so make sure to pass that in.</p>
+
+<p>The client-side API matches the mongoDB docs for <a href="http://mongodb.github.com/node-mongodb-native/api-generated/collection.html">Collection</a>. Any interaction with mongoDB on the browser is send to the server and persisted using the mongoDB driver on the server then the data is returned to the client.</p>
+
+<p>Think of this server-client data synchronization on steroids.</p>
+
+<h2><a href="#Motivation" name="Motivation">But this is madness, why would you give clients access to the DB, they will troll you.</a></h2>
+
+<p>Consider a generic CRUD based website that has things like</p>
+
+<ul>
+<li>GET /blog/:id</li>
+<li>POST /blog</li>
+<li>DELETE /blog/:id</li>
+</ul><p>etc. Now consider replacing that with</p>
+
+<ul>
+<li>Blog.find({ id: id })</li>
+<li>Blog.insert(doc)</li>
+<li>Blog.remove({ id: id })</li>
+</ul><p>All it's doing is saving you the hassle of writing boilerplate serverside code. </p>
+
+<p>It's like <a href="http://mongodb.github.com/node-mongodb-native/api-generated/collection.html">Backbone.sync</a> but the backend is written for you.</p>
+
+<p>You can also hook a session based <a href="https://github.com/Raynos/clientmongo#Tests">Auth system</a> into the API to limit DB access. </p>
+
+<p>It's just taking the "database on the client" concept from <a href="https://github.com/Raynos/clientmongo/tree/master/examples">firebase</a> and <a href="http://meteor.com/">meteor</a> and giving you access to a database on the client in a simple singular module.</p>
+
+<p>It's taking the concept of a SPA to the next level, rather then writing a backend to handle data storage you write a backend that implements the authorization rules on the database and talk to the database on the client.</p>
+
+<h2><a href="#Further" name="Further">Further Examples</a></h2>
+
+<ul>
+<li><a href="https://github.com/Raynos/clientmongo#Tests">The same unit test suite of clientmongo can be run on both client and server</a></li>
+<li><a href="https://github.com/Raynos/clientmongo/tree/master/examples">examples folder</a></li>
+</ul><h2><a href="#Disclaimers" name="Disclaimers">Disclaimers</a></h2>
+
+<p>You still need to run a backend, you still need to run node.js, you still need to run mongoDB on the server. You need to create a node.js HTTP server and pass it into clientmongo on the server, and only then can you use clientmongo on the client.</p>
+
+<p>You also need to build clientmongo using a browserify as your commonJS compiler.</p>
+
+<p>You also need to implement your own session system and auth system for this to work, you need to give your browsers authTokens that you can then match to "users" on the server and limit their database access through a role system that you need to implement</p>
+      </section>
+      <footer>
+        <p>This project is maintained by <a href="https://github.com/Raynos">Raynos</a></p>
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
+    </div>
+    <script src="javascripts/scale.fix.js"></script>
+    
+  </body>
+</html>
