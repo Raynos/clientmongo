@@ -3,6 +3,9 @@ REPORTER = spec
 web:
 	node ./examples/web/server.js
 
+auth:
+	node ./examples/auth/server.js
+
 test-builder:
 	browserify ./test/clientmongo.js \
 		--o ./test/test.js \

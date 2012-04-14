@@ -32,3 +32,27 @@ To clarify, you can run the exact same code that interacts with mongoDB in both 
  3. Boot server for client-side tests `make test-server`
  4. Build client-side code for client-side tests `make test-build`
  5. Run tests in browser (localhost:3000) or `make test-run`
+
+## Documentation
+
+The APIs match the mongo-col API and more specifically the MongoDB Collection and Cursor API.
+
+The only things missing are the options commands on the Collection.
+
+### Auth
+
+Auth can be implemented by passing auth tokens along in the browser
+
+`var Users = clientmongo("Users", authToken)`
+
+and by implementing auth handling in the server
+
+    var clientmongo = clientMongo(server, function (auth, options, callback) {
+            // return boolean for allowed (sync)
+            return true || false
+            // or return allowed or not through callback
+            setTimeout(function () {
+                callback(true || false)
+            }, 50)
+        }),
+        Users = clientmongo("Users")

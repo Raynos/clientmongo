@@ -2431,6 +2431,7 @@ var Cursor = {
                 args: self.args,
                 cursor: self.cursor,
                 name: self.name,
+                auth: self.auth,
                 commands: commands
             })
         })
@@ -2459,6 +2460,7 @@ function tunnelCursorRemote(method) {
                 args: self.args,
                 cursor: self.cursor,
                 name: self.name,
+                auth: self.auth,
                 commands: commands
             })
         })
@@ -2471,6 +2473,7 @@ function storeOrTunnelCommand(method) {
     return function () {
         var self = this,
             args = [].slice.call(arguments),
+            auth = this.auth,
             cb = args[args.length - 1]
 
         self.commands.push({
@@ -2496,6 +2499,7 @@ function storeOrTunnelCommand(method) {
                 args: self.args,
                 cursor: self.cursor,
                 name: self.name,
+                auth: self.auth,
                 commands: commands
             })
         })
@@ -2518,9 +2522,10 @@ function storeCommand(method) {
 }
 
 var Collection = {
-    constructor: function (collectionName) {
+    constructor: function (collectionName, auth) {
         this._name = collectionName
         this.collectionName = collectionName
+        this.auth = auth
         return this
     },
     findOne: tunnelToRemote("findOne"),
@@ -2537,13 +2542,15 @@ var Collection = {
     findOne: function () {
         var args = [].slice.call(arguments),
             name = this._name,
+            auth = this.auth,
             callback = args[args.length - 1]
 
         if (typeof callback === "function") {
             getRemote(function (remote) {
                 remote.sendCollectionCommand({
                     method: "findOne", 
-                    name: name, 
+                    name: name,
+                    auth: auth,
                     args: args
                 })
             })
@@ -2552,24 +2559,26 @@ var Collection = {
             name: name,
             args: args,
             method: "findOne"
-        })
+        }, auth)
     },
     find: function () {
         var args = [].slice.call(arguments),
             name = this._name,
+            auth = this.auth,
             callback = args[args.length - 1]
 
         if (typeof callback === "function") {
             args[args.length - 1] = function (err, cursorName) {
                 callback.call(this, err, cursor({
                     cursor: cursorName
-                }))
+                }, auth))
             }
 
             return getRemote(function (remote) {
                 remote.sendCommandWithCursor({
                     method: "find", 
-                    name: name, 
+                    name: name,
+                    auth: auth,
                     args: args
                 })
             })
@@ -2578,7 +2587,7 @@ var Collection = {
             name: name,
             args: args,
             method: "find"
-        })
+        }, auth)
     },
     createIndex: tunnelToRemote("createIndex"),
     ensureIndex: tunnelToRemote("ensureIndex"),
@@ -2595,16 +2604,16 @@ var Collection = {
     stats: tunnelToRemote("stats")
 }
 
-module.exports = function (name) {
-    return collection(name)
+module.exports = function (name, auth) {
+    return collection(name, auth)
 }
 
-function collection(name) {
-    return Object.create(Collection).constructor(name)
+function collection(name, auth) {
+    return Object.create(Collection).constructor(name, auth)
 }
 
-function cursor(options) {
-    return Object.create(Cursor).constructor(options)
+function cursor(options, auth) {
+    return Object.create(Cursor).constructor(options, auth)
 }
 
 function getRemote(cb) {
@@ -2618,13 +2627,15 @@ function getRemote(cb) {
 function tunnelToRemote(methodName) {
     return function () {
         var args = [].slice.call(arguments),
-            name = this._name
+            name = this._name,
+            auth = this.auth
 
         getRemote(function (remote) {
             remote.sendCollectionCommand({
                 method: methodName,
                 name: name,
-                args: args
+                args: args,
+                auth: auth
             })
         })
     }
@@ -2634,6 +2645,7 @@ function tunnelToRemoteWithCursor(methodName) {
     return function () {
         var args = [].slice.call(arguments),
             name = this._name,
+            auth = this.auth,
             callback = args[args.length - 1]
 
         if (typeof callback === "function") {
@@ -2641,6 +2653,7 @@ function tunnelToRemoteWithCursor(methodName) {
                 remote.sendCollectionCommand({
                     method: methodName, 
                     name: name, 
+                    auth: auth,
                     args: args
                 })
             })
@@ -2649,25 +2662,27 @@ function tunnelToRemoteWithCursor(methodName) {
             name: name,
             args: args,
             method: methodName
-        })
+        }, auth)
     }
 }
 
 function tunnelToRemoteWithCollection(methodName) {
     return function () {
         var args = [].slice.call(arguments),
-            cb = args[args.length - 1]
+            cb = args[args.length - 1],
+            auth = this.auth,
             name = this._name
 
         args[args.length - 1] = function (err, collectionName) {
             cb(err, 
-                collectionName && collection(collectionName))
+                collectionName && collection(collectionName, auth))
         }
 
         getRemote(function (remote) {
             remote.sendCommandWithCollection({
                 method: methodName,
                 name: name,
+                auth: auth,
                 args: args
             })
         })   
