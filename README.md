@@ -18,7 +18,7 @@ MongoDB on the client
 
     // server.js
 
-    var server = require("express").createServer(),
+    var server = require("http").createServer(),
         clientmongo = require("clientmongo")(server)
 
 For a full example run the unit test suite (one code base) on both the server and the client.
