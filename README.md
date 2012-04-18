@@ -18,8 +18,11 @@ MongoDB on the client
 
     // server.js
 
-    var server = require("express").createServer(),
-        clientmongo = require("clientmongo")(server)
+    var server = require("http").createServer(),
+        dnode = require("dnode"),
+        clientmongo = require("clientmongo")
+    
+    dnode().use(clientmongo.middleware).listen(server)
 
 For a full example run the unit test suite (one code base) on both the server and the client.
 
@@ -53,15 +56,19 @@ and by implementing auth handling in the server
             method, args, cursor data
         callback is used for async auth
     */
-    var clientmongo = clientMongo(server, function (authToken, options, callback) {
-            // return boolean for allowed (sync)
-            return true || false
-            // or return allowed or not through callback
-            setTimeout(function () {
-                callback(true || false)
-            }, 50)
-        }),
+    var clientmongo = require("clientmongo"),
         Users = clientmongo("Users")
+
+    clientmongo.auth(function (authToken, options, callback) {
+        // return boolean for allowed (sync)
+        return true || false
+        // or return allowed or not through callback
+        setTimeout(function () {
+            callback(true || false)
+        }, 50)
+    })
+
+## MIT Licenced
 
   [1]: http://mongodb.github.com/node-mongodb-native/api-generated/collection.html
   [2]: http://mongodb.github.com/node-mongodb-native/api-generated/cursor.html
