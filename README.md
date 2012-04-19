@@ -6,7 +6,7 @@ MongoDB on the client
 
     // client.js
     var clientmongo = require("clientMongo"),
-        Users = clientmongo("Users")
+        Users = clientmongo("Users", "optionalDatabaseName")
 
     Users.insert({
         foo: "bar"
