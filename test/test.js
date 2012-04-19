@@ -2391,6 +2391,7 @@ dnode.connect(function (remote) {
 var Cursor = {
     constructor: function (options) {
         this.name = options.name
+        this.db = options.db
         var args = this.args = (options.args || []).slice()
         this.cursor = options.cursor || uuid()
         this.method = options.method
@@ -2429,6 +2430,7 @@ var Cursor = {
             remote.sendCursorCommand({
                 method: self.method,
                 args: self.args,
+                db: self.db,
                 cursor: self.cursor,
                 name: self.name,
                 auth: self.auth,
@@ -2458,6 +2460,7 @@ function tunnelCursorRemote(method) {
             remote.sendCursorCommand({
                 method: self.method,
                 args: self.args,
+                db: self.db,
                 cursor: self.cursor,
                 name: self.name,
                 auth: self.auth,
@@ -2497,6 +2500,7 @@ function storeOrTunnelCommand(method) {
             remote.sendCursorCommand({
                 method: self.method,
                 args: self.args,
+                db: self.db,
                 cursor: self.cursor,
                 name: self.name,
                 auth: self.auth,
@@ -2522,9 +2526,14 @@ function storeCommand(method) {
 }
 
 var Collection = {
-    constructor: function (collectionName, auth) {
+    constructor: function (collectionName, databaseName, auth) {
+        if (typeof databaseName === "function") {
+            auth = databaseName
+            databaseName = null
+        }
         this._name = collectionName
         this.collectionName = collectionName
+        this.databaseName = databaseName
         this.auth = auth
         return this
     },
@@ -2542,6 +2551,7 @@ var Collection = {
     findOne: function () {
         var args = [].slice.call(arguments),
             name = this._name,
+            db = this.databaseName,
             auth = this.auth,
             callback = args[args.length - 1]
 
@@ -2550,6 +2560,7 @@ var Collection = {
                 remote.sendCollectionCommand({
                     method: "findOne", 
                     name: name,
+                    db: db,
                     auth: auth,
                     args: args
                 })
@@ -2558,12 +2569,14 @@ var Collection = {
         return cursor({
             name: name,
             args: args,
+            db: db,
             method: "findOne"
         }, auth)
     },
     find: function () {
         var args = [].slice.call(arguments),
             name = this._name,
+            db = this.databaseName,
             auth = this.auth,
             callback = args[args.length - 1]
 
@@ -2578,6 +2591,7 @@ var Collection = {
                 remote.sendCommandWithCursor({
                     method: "find", 
                     name: name,
+                    db: db,
                     auth: auth,
                     args: args
                 })
@@ -2586,6 +2600,7 @@ var Collection = {
         return cursor({
             name: name,
             args: args,
+            db: db,
             method: "find"
         }, auth)
     },
@@ -2604,12 +2619,12 @@ var Collection = {
     stats: tunnelToRemote("stats")
 }
 
-module.exports = function (name, auth) {
+module.exports = function (name, databaseName, auth) {
     return collection(name, auth)
 }
 
-function collection(name, auth) {
-    return Object.create(Collection).constructor(name, auth)
+function collection(name, databaseName, auth) {
+    return Object.create(Collection).constructor(name, databaseName, auth)
 }
 
 function cursor(options, auth) {
@@ -2628,12 +2643,14 @@ function tunnelToRemote(methodName) {
     return function () {
         var args = [].slice.call(arguments),
             name = this._name,
+            db = this.databaseName,
             auth = this.auth
 
         getRemote(function (remote) {
             remote.sendCollectionCommand({
                 method: methodName,
                 name: name,
+                db: db,
                 args: args,
                 auth: auth
             })
@@ -2645,6 +2662,7 @@ function tunnelToRemoteWithCursor(methodName) {
     return function () {
         var args = [].slice.call(arguments),
             name = this._name,
+            db = this.databaseName,
             auth = this.auth,
             callback = args[args.length - 1]
 
@@ -2653,6 +2671,7 @@ function tunnelToRemoteWithCursor(methodName) {
                 remote.sendCollectionCommand({
                     method: methodName, 
                     name: name, 
+                    db: db,
                     auth: auth,
                     args: args
                 })
@@ -2661,6 +2680,7 @@ function tunnelToRemoteWithCursor(methodName) {
         return cursor({
             name: name,
             args: args,
+            db: db,
             method: methodName
         }, auth)
     }
@@ -2671,6 +2691,7 @@ function tunnelToRemoteWithCollection(methodName) {
         var args = [].slice.call(arguments),
             cb = args[args.length - 1],
             auth = this.auth,
+            db = this.databaseName,
             name = this._name
 
         args[args.length - 1] = function (err, collectionName) {
@@ -2682,6 +2703,7 @@ function tunnelToRemoteWithCollection(methodName) {
             remote.sendCommandWithCollection({
                 method: methodName,
                 name: name,
+                db: db,
                 auth: auth,
                 args: args
             })
@@ -2772,46 +2794,37 @@ module.exports = {"main":"./index.js"}
 });
 
 require.define("/node_modules/clientmongo/node_modules/dnode/node_modules/dnode-protocol/index.js", function (require, module, exports, __dirname, __filename) {
-var Session = require('./lib/session');
+var traverse = require('traverse');
+var EventEmitter = require('events').EventEmitter;
+var stream = require('stream');
+var json = typeof JSON === 'object' ? JSON : require('jsonify');
 
 var exports = module.exports = function (wrapper) {
-    return new Protocol(wrapper);
-};
-
-exports.parseArgs = require('./lib/parse_args');
-
-function Protocol (wrapper) {
-    this.sessions = {};
-    this.wrapper = wrapper;
-}
-
-Protocol.prototype.create = function () {
-    var id = null;
-    do {
-        id = Math.floor(
-            Math.random() * Math.pow(2,32)
-        ).toString(16);
-    } while (this.sessions[id]);
+    var self = {};
     
-    var s = Session(id, this.wrapper);
-    this.sessions[id] = s;
-    return s;
+    self.sessions = {};
+    
+    self.create = function () {
+        var id = null;
+        do {
+            id = Math.floor(
+                Math.random() * Math.pow(2,32)
+            ).toString(16);
+        } while (self.sessions[id]);
+        
+        var s = Session(id, wrapper);
+        self.sessions[id] = s;
+        return s;
+    };
+    
+    self.destroy = function (id) {
+        delete self.sessions[id];
+    };
+    
+    return self;
 };
 
-Protocol.prototype.destroy = function (id) {
-    delete self.sessions[id];
-};
-
-});
-
-require.define("/node_modules/clientmongo/node_modules/dnode/node_modules/dnode-protocol/lib/session.js", function (require, module, exports, __dirname, __filename) {
-var Store = require('./store');
-var Scrubber = require('./scrubber');
-
-var json = typeof JSON === 'object' ? JSON : require('jsonify');
-var EventEmitter = require('events').EventEmitter;
-
-module.exports = function (id, wrapper) {
+var Session = exports.Session = function (id, wrapper) {
     var self = new EventEmitter;
     
     self.id = id;
@@ -2930,73 +2943,8 @@ module.exports = function (id, wrapper) {
     return self;
 };
 
-});
-
-require.define("/node_modules/clientmongo/node_modules/dnode/node_modules/dnode-protocol/lib/store.js", function (require, module, exports, __dirname, __filename) {
-var EventEmitter = require('events').EventEmitter;
-
-module.exports = Store
-
-function Store () {
-    this.items = [];
-}
-
-Store.prototype = new EventEmitter;
-
-Store.prototype.has = function (id) {
-    return this.items[id] !== undefined;
-};
-
-Store.prototype.get = function (id) {
-    if (!this.has(id)) return null;
-    return this.wrap(this.items[id]);
-};
-
-Store.prototype.add = function (fn, id) {
-    if (id == undefined) id = this.items.length;
-    this.items[id] = fn;
-    return id;
-};
-
-Store.prototype.cull = function (arg) {
-    if (typeof arg == 'function') {
-        arg = this.items.indexOf(arg);
-    }
-    delete this.items[arg];
-    return arg;
-};
-
-Store.prototype.indexOf = function (fn) {
-    return this.items.indexOf(fn);
-};
-
-Store.prototype.wrap = function (fn) {
-    var self = this;
-    return function () {
-        fn.apply(this, arguments);
-        self.autoCull(fn);
-    };
-};
-
-Store.prototype.autoCull = function (fn) {
-    if (typeof fn.times == 'number') {
-        fn.times--;
-        if (fn.times == 0) {
-            var id = this.cull(fn);
-            this.emit('cull', id);
-        }
-    }
-};
-
-});
-
-require.define("/node_modules/clientmongo/node_modules/dnode/node_modules/dnode-protocol/lib/scrubber.js", function (require, module, exports, __dirname, __filename) {
 // scrub callbacks out of requests in order to call them again later
-
-var traverse = require('traverse');
-var Store = require('./store');
-
-module.exports = function (store) {
+var Scrubber = exports.Scrubber = function (store) {
     var self = {};
     store = store || new Store;
     self.callbacks = store.items;
@@ -3084,6 +3032,108 @@ module.exports = function (store) {
     }
     
     return self;
+}
+
+var Store = exports.Store = function() {
+    var self = new EventEmitter;
+    var items = self.items = [];
+    
+    self.has = function (id) {
+        return items[id] != undefined;
+    };
+    
+    self.get = function (id) {
+        if (!self.has(id)) return null;
+        return wrap(items[id]);
+    };
+    
+    self.add = function (fn, id) {
+        if (id == undefined) id = items.length;
+        items[id] = fn;
+        return id;
+    };
+    
+    self.cull = function (arg) {
+        if (typeof arg == 'function') {
+            arg = items.indexOf(arg);
+        }
+        delete items[arg];
+        return arg;
+    };
+    
+    self.indexOf = function (fn) {
+        return items.indexOf(fn);
+    };
+    
+    function wrap (fn) {
+        return function() {
+            fn.apply(this, arguments);
+            autoCull(fn);
+        };
+    }
+    
+    function autoCull (fn) {
+        if (typeof fn.times == 'number') {
+            fn.times--;
+            if (fn.times == 0) {
+                var id = self.cull(fn);
+                self.emit('cull', id);
+            }
+        }
+    }
+    
+    return self;
+};
+
+var parseArgs = exports.parseArgs = function (argv) {
+    var params = {};
+    
+    [].slice.call(argv).forEach(function (arg) {
+        if (typeof arg === 'string') {
+            if (arg.match(/^\d+$/)) {
+                params.port = parseInt(arg, 10);
+            }
+            else if (arg.match('^/')) {
+                params.path = arg;
+            }
+            else {
+                params.host = arg;
+            }
+        }
+        else if (typeof arg === 'number') {
+            params.port = arg;
+        }
+        else if (typeof arg === 'function') {
+            params.block = arg;
+        }
+        else if (typeof arg === 'object') {
+            if (arg.__proto__ === Object.prototype) {
+                // merge vanilla objects into params
+                Object.keys(arg).forEach(function (key) {
+                    params[key] = key === 'port'
+                        ? parseInt(arg[key], 10)
+                        : arg[key]
+                    ;
+                });
+            }
+            else if (stream.Stream && arg instanceof stream.Stream) {
+                params.stream = arg;
+            }
+            else {
+                // and non-Stream, non-vanilla objects are probably servers
+                params.server = arg;
+            }
+        }
+        else if (typeof arg === 'undefined') {
+            // ignore
+        }
+        else {
+            throw new Error('Not sure what to do about '
+                + typeof arg + ' objects');
+        }
+    });
+    
+    return params;
 };
 
 });
@@ -3388,6 +3438,129 @@ forEach(Object_keys(Traverse.prototype), function (key) {
         return t[key].apply(t, args);
     };
 });
+
+});
+
+require.define("stream", function (require, module, exports, __dirname, __filename) {
+var events = require('events');
+var util = require('util');
+
+function Stream() {
+  events.EventEmitter.call(this);
+}
+util.inherits(Stream, events.EventEmitter);
+module.exports = Stream;
+// Backwards-compat with node 0.4.x
+Stream.Stream = Stream;
+
+Stream.prototype.pipe = function(dest, options) {
+  var source = this;
+
+  function ondata(chunk) {
+    if (dest.writable) {
+      if (false === dest.write(chunk) && source.pause) {
+        source.pause();
+      }
+    }
+  }
+
+  source.on('data', ondata);
+
+  function ondrain() {
+    if (source.readable && source.resume) {
+      source.resume();
+    }
+  }
+
+  dest.on('drain', ondrain);
+
+  // If the 'end' option is not supplied, dest.end() will be called when
+  // source gets the 'end' or 'close' events.  Only dest.end() once, and
+  // only when all sources have ended.
+  if (!dest._isStdio && (!options || options.end !== false)) {
+    dest._pipeCount = dest._pipeCount || 0;
+    dest._pipeCount++;
+
+    source.on('end', onend);
+    source.on('close', onclose);
+  }
+
+  var didOnEnd = false;
+  function onend() {
+    if (didOnEnd) return;
+    didOnEnd = true;
+
+    dest._pipeCount--;
+
+    // remove the listeners
+    cleanup();
+
+    if (dest._pipeCount > 0) {
+      // waiting for other incoming streams to end.
+      return;
+    }
+
+    dest.end();
+  }
+
+
+  function onclose() {
+    if (didOnEnd) return;
+    didOnEnd = true;
+
+    dest._pipeCount--;
+
+    // remove the listeners
+    cleanup();
+
+    if (dest._pipeCount > 0) {
+      // waiting for other incoming streams to end.
+      return;
+    }
+
+    dest.destroy();
+  }
+
+  // don't leave dangling pipes when there are errors.
+  function onerror(er) {
+    cleanup();
+    if (this.listeners('error').length === 0) {
+      throw er; // Unhandled stream error in pipe.
+    }
+  }
+
+  source.on('error', onerror);
+  dest.on('error', onerror);
+
+  // remove all the event listeners that were added.
+  function cleanup() {
+    source.removeListener('data', ondata);
+    dest.removeListener('drain', ondrain);
+
+    source.removeListener('end', onend);
+    source.removeListener('close', onclose);
+
+    source.removeListener('error', onerror);
+    dest.removeListener('error', onerror);
+
+    source.removeListener('end', cleanup);
+    source.removeListener('close', cleanup);
+
+    dest.removeListener('end', cleanup);
+    dest.removeListener('close', cleanup);
+  }
+
+  source.on('end', cleanup);
+  source.on('close', cleanup);
+
+  dest.on('end', cleanup);
+  dest.on('close', cleanup);
+
+  dest.emit('pipe', source);
+
+  // Allow for unix-like usage: A.pipe(B).pipe(C)
+  return dest;
+};
 
 });
 
@@ -3832,185 +4005,6 @@ module.exports = function (value, replacer, space) {
     // Make a fake root object containing our value under the key of ''.
     // Return the result of stringifying the value.
     return str('', {'': value});
-};
-
-});
-
-require.define("/node_modules/clientmongo/node_modules/dnode/node_modules/dnode-protocol/lib/parse_args.js", function (require, module, exports, __dirname, __filename) {
-var stream = require('stream');
-
-module.exports = function (argv) {
-    var params = {};
-    
-    [].slice.call(argv).forEach(function (arg) {
-        if (typeof arg === 'string') {
-            if (arg.match(/^\d+$/)) {
-                params.port = parseInt(arg, 10);
-            }
-            else if (arg.match('^/')) {
-                params.path = arg;
-            }
-            else {
-                params.host = arg;
-            }
-        }
-        else if (typeof arg === 'number') {
-            params.port = arg;
-        }
-        else if (typeof arg === 'function') {
-            params.block = arg;
-        }
-        else if (typeof arg === 'object') {
-            if (arg.__proto__ === Object.prototype) {
-                // merge vanilla objects into params
-                Object.keys(arg).forEach(function (key) {
-                    params[key] = key === 'port'
-                        ? parseInt(arg[key], 10)
-                        : arg[key]
-                    ;
-                });
-            }
-            else if (stream.Stream && arg instanceof stream.Stream) {
-                params.stream = arg;
-            }
-            else {
-                // and non-Stream, non-vanilla objects are probably servers
-                params.server = arg;
-            }
-        }
-        else if (typeof arg === 'undefined') {
-            // ignore
-        }
-        else {
-            throw new Error('Not sure what to do about '
-                + typeof arg + ' objects');
-        }
-    });
-    
-    return params;
-};
-
-});
-
-require.define("stream", function (require, module, exports, __dirname, __filename) {
-var events = require('events');
-var util = require('util');
-
-function Stream() {
-  events.EventEmitter.call(this);
-}
-util.inherits(Stream, events.EventEmitter);
-module.exports = Stream;
-// Backwards-compat with node 0.4.x
-Stream.Stream = Stream;
-
-Stream.prototype.pipe = function(dest, options) {
-  var source = this;
-
-  function ondata(chunk) {
-    if (dest.writable) {
-      if (false === dest.write(chunk) && source.pause) {
-        source.pause();
-      }
-    }
-  }
-
-  source.on('data', ondata);
-
-  function ondrain() {
-    if (source.readable && source.resume) {
-      source.resume();
-    }
-  }
-
-  dest.on('drain', ondrain);
-
-  // If the 'end' option is not supplied, dest.end() will be called when
-  // source gets the 'end' or 'close' events.  Only dest.end() once, and
-  // only when all sources have ended.
-  if (!dest._isStdio && (!options || options.end !== false)) {
-    dest._pipeCount = dest._pipeCount || 0;
-    dest._pipeCount++;
-
-    source.on('end', onend);
-    source.on('close', onclose);
-  }
-
-  var didOnEnd = false;
-  function onend() {
-    if (didOnEnd) return;
-    didOnEnd = true;
-
-    dest._pipeCount--;
-
-    // remove the listeners
-    cleanup();
-
-    if (dest._pipeCount > 0) {
-      // waiting for other incoming streams to end.
-      return;
-    }
-
-    dest.end();
-  }
-
-
-  function onclose() {
-    if (didOnEnd) return;
-    didOnEnd = true;
-
-    dest._pipeCount--;
-
-    // remove the listeners
-    cleanup();
-
-    if (dest._pipeCount > 0) {
-      // waiting for other incoming streams to end.
-      return;
-    }
-
-    dest.destroy();
-  }
-
-  // don't leave dangling pipes when there are errors.
-  function onerror(er) {
-    cleanup();
-    if (this.listeners('error').length === 0) {
-      throw er; // Unhandled stream error in pipe.
-    }
-  }
-
-  source.on('error', onerror);
-  dest.on('error', onerror);
-
-  // remove all the event listeners that were added.
-  function cleanup() {
-    source.removeListener('data', ondata);
-    dest.removeListener('drain', ondrain);
-
-    source.removeListener('end', onend);
-    source.removeListener('close', onclose);
-
-    source.removeListener('error', onerror);
-    dest.removeListener('error', onerror);
-
-    source.removeListener('end', cleanup);
-    source.removeListener('close', cleanup);
-
-    dest.removeListener('end', cleanup);
-    dest.removeListener('close', cleanup);
-  }
-
-  source.on('end', cleanup);
-  source.on('close', cleanup);
-
-  dest.on('end', cleanup);
-  dest.on('close', cleanup);
-
-  dest.emit('pipe', source);
-
-  // Allow for unix-like usage: A.pipe(B).pipe(C)
-  return dest;
 };
 
 });

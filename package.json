@@ -1,6 +1,6 @@
 {
     "name": "clientmongo", 
-    "version": "0.3.1",
+    "version": "0.3.2",
     "description": "MongoDB proxy for clientside", 
     "author": "Raynos <raynos2@gmail.com>",
     "dependencies": {
