@@ -1,13 +1,13 @@
 {
     "name": "clientmongo", 
-    "version": "0.3.2",
+    "version": "0.3.3",
     "description": "MongoDB proxy for clientside", 
     "author": "Raynos <raynos2@gmail.com>",
     "dependencies": {
         "dnode": "0.9.9",
         "node-uuid": "1.3.3",
         "mongo-col": "0.1.16",
-        "pd": "0.6.3"
+        "pd": "0.7.3"
     },
     "devDependencies": {
         "browserify": "1.10.7",

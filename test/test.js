@@ -2378,15 +2378,9 @@ if (typeof process !== "undefined" && process.title === "node") {
 require.define("/node_modules/clientmongo/lib/client.js", function (require, module, exports, __dirname, __filename) {
 var dnode = require("dnode"),
     uuid = require("node-uuid"),
-    cached,
-    callbackList = []
+    pd = require("pd")
 
-dnode.connect(function (remote) {
-    cached = remote
-    callbackList.forEach(function (cb) {
-        cb(remote)
-    })
-})
+var getRemote = pd.memoize(dnode.connect, dnode)
 
 var Cursor = {
     constructor: function (options) {
@@ -2457,6 +2451,7 @@ function tunnelCursorRemote(method) {
         self.commands = []
 
         getRemote(function (remote) {
+            console.log("send cursor tunnel cursor", self)
             remote.sendCursorCommand({
                 method: self.method,
                 args: self.args,
@@ -2583,11 +2578,16 @@ var Collection = {
         if (typeof callback === "function") {
             args[args.length - 1] = function (err, cursorName) {
                 callback.call(this, err, cursor({
-                    cursor: cursorName
+                    cursor: cursorName,
+                    name: name,
+                    args: args,
+                    db: db,
+                    method: "find"
                 }, auth))
             }
 
             return getRemote(function (remote) {
+                console.log("sending command with cursor", name)
                 remote.sendCommandWithCursor({
                     method: "find", 
                     name: name,
@@ -2629,14 +2629,6 @@ function collection(name, databaseName, auth) {
 
 function cursor(options, auth) {
     return Object.create(Cursor).constructor(options, auth)
-}
-
-function getRemote(cb) {
-    if (cached) {
-        cb(cached)
-    } else {
-        callbackList.push(cb)
-    }
 }
 
 function tunnelToRemote(methodName) {
@@ -8027,6 +8019,209 @@ require.define("/node_modules/clientmongo/node_modules/node-uuid/uuid.js", funct
 require.define("crypto", function (require, module, exports, __dirname, __filename) {
 // todo
 
+});
+
+require.define("/node_modules/clientmongo/node_modules/pd/package.json", function (require, module, exports, __dirname, __filename) {
+module.exports = {"main":"lib/pd"}
+});
+
+require.define("/node_modules/clientmongo/node_modules/pd/lib/pd.js", function (require, module, exports, __dirname, __filename) {
+/*
+    pd(obj) -> propertyDescriptorsOfObject {
+        bindAll: function that binds all the methods of an object to the object
+        extend: function that extends the first argument with the rest
+        Name: returns a namespace(anyKey) -> uniqueObject function
+        memoize: returns a memoized version of the function
+    }
+*/
+;(function (Object, slice) {
+    "use strict"
+    
+    pd.bindAll = bindAll
+    pd.extend = extend
+    pd.Name = Name
+    pd.memoize = asyncMemoize
+    
+    typeof module !== "undefined" ? module.exports = pd : window.pd = pd
+
+    /*
+        pd will return all the own propertydescriptors of the object
+
+        @param Object object - object to get pds from.
+
+        @return Object - A hash of key/propertyDescriptors
+    */    
+    function pd(obj) {
+        var pds = {}
+        Object.getOwnPropertyNames(obj).forEach(function(key) {
+            pds[key] = Object.getOwnPropertyDescriptor(obj, key)
+        })
+        return pds
+    }
+
+    /*
+        Extend will extend the firat parameter with any other parameters 
+        passed in. Only the own property names will be extended into
+        the object
+
+        @param Object target - target to be extended
+        @arguments Array [target, ...] - the rest of the objects passed
+            in will extended into the target
+
+        @return Object - the target
+    */
+    function extend(target) {
+        slice.call(arguments, 1).forEach(function(source) {
+            Object.defineProperties(target, pd(source))
+        });
+        return target
+    }
+
+    /*
+        defines a namespace object. This hides a "privates" object on object 
+        under the "key" namespace
+
+        @param Object object - object to hide a privates object on
+        @param Object key - key to hide it under
+
+        @author Gozala : https://gist.github.com/1269991
+
+        @return Object privates
+    */
+    function namespace(object, key) {
+        var privates = Object.create(object),
+            valueOf = object.valueOf
+        
+        Object.defineProperty(object, "valueOf", {
+            value: function(value) {
+                return value !== key ? valueOf.apply(this, arguments) : privates
+            },
+            writable: true,
+            configurable: true
+        })
+        
+        return privates
+    }
+    
+    /*
+        Constructs a Name function, when given an object it will return a
+        privates object. 
+
+        @author Gozala : https://gist.github.com/1269991
+
+        @return Function name
+    */
+    function Name() {
+        var key = {}
+        return name
+        
+        function name(object) {
+            var privates = object.valueOf(key)
+            return privates !== object ? privates : namespace(object, key)
+        }
+    }
+    
+    /*
+        bindAll binds all methods to have their context set to the object
+
+        @param Object obj - the object to bind methods on
+        @arguments Array [target, ...] - the rest of the objects passed
+            in will extended into the obj
+
+        @return Object - the bound object
+    */
+    function bindAll(obj) {
+        pd.extend.apply(null, arguments) 
+        Object.keys(obj).filter(isMethod).forEach(bindMethods)
+        return obj
+        
+        function isMethod(name) {
+            return obj[name] && obj[name].bind === isMethod.bind
+        }
+        
+        function bindMethods(name) {
+            obj[name] = obj[name].bind(obj)
+        }
+    }
+
+    /*
+        default hasher for memoize. Takes the first arguments and returns it
+            if it's a string, otherwise returns the string "void"
+
+        @param Any x - argument to hash on
+
+        @return String - a hash key
+    */
+    function defaultHasher(x) { 
+        if (typeof x === "object" || typeof x === "function" ||
+                typeof x === "undefined"
+        ) {
+            return "void"
+        }
+        return x.toString()
+    }
+
+    /*
+        memoizes asynchronous functions. The asynchronous function must have
+            a callback as a last argument, and that callback must be called.
+        
+        Memoization means that the function you pass in will only be called once
+            for every different type of argument. If the async function only
+            has a callback argument then it will only be called once. The 
+            results of invocation are cached
+
+        @param Function fn - function to memoize
+        @param Object context - optional context for the function
+        @param Function hasher - optional custom hasher function. This will
+            be called on the arguments of the memoized function. The result
+            of the hasher will be the key the cached data will be stored under.
+
+        @return Function - the memoized function
+    */
+    function asyncMemoize(fn, context, hasher) {
+        var caches = callProxy.cache = {},
+            callbackLists = {}
+
+        if (typeof context === "function") {
+            hasher = context
+            context = null
+        }
+
+        if (typeof hasher === "undefined") {
+            hasher = defaultHasher
+        }
+
+        return callProxy
+
+        function callProxy() {
+            var args = [].slice.call(arguments),
+                cb = args.pop(),
+                key = hasher.apply(null, args)
+
+            if (caches[key]) {
+                return typeof cb === "function" && cb.apply(null, caches[key])
+            } else if (callbackLists[key]) {
+                return callbackLists[key].push(cb)
+            }
+
+            callbackLists[key] = [cb]
+
+            args.push(callbackProxy)
+
+            fn.apply(context, args)
+
+            function callbackProxy() {
+                caches[key] = arguments
+                var list = callbackLists[key]
+                delete callbackLists[key]
+                list.forEach(function (cb) {
+                    typeof cb === "function" && cb.apply(this, caches[key])
+                }, this)
+            }
+        }
+    }
+
+})(Object, [].slice)
 });
 
 require.define("/node_modules/node-uuid/package.json", function (require, module, exports, __dirname, __filename) {
