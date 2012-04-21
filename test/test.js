@@ -2378,9 +2378,24 @@ if (typeof process !== "undefined" && process.title === "node") {
 require.define("/node_modules/clientmongo/lib/client.js", function (require, module, exports, __dirname, __filename) {
 var dnode = require("dnode"),
     uuid = require("node-uuid"),
-    pd = require("pd")
+    pd = require("pd"),
+    cached,
+    callbackList = []
 
-var getRemote = pd.memoize(dnode.connect, dnode)
+var getRemote = function (callback) {
+    if (cached) {
+        return callback(cached)
+    } else {
+        callbackList.push(callback)
+    }
+}
+
+dnode.connect(function (remote) {
+    cached = remote
+    callbackList.forEach(function (f) {
+        f(remote)
+    })
+})
 
 var Cursor = {
     constructor: function (options) {
@@ -2451,7 +2466,6 @@ function tunnelCursorRemote(method) {
         self.commands = []
 
         getRemote(function (remote) {
-            console.log("send cursor tunnel cursor", self)
             remote.sendCursorCommand({
                 method: self.method,
                 args: self.args,
@@ -2587,7 +2601,6 @@ var Collection = {
             }
 
             return getRemote(function (remote) {
-                console.log("sending command with cursor", name)
                 remote.sendCommandWithCursor({
                     method: "find", 
                     name: name,
